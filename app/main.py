@@ -1,23 +1,18 @@
 import os
 import logging
-import asyncio
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright
+from typing import List, Optional
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 from . import models, schemas, auth
 from .database import engine, Base, get_db
-from typing import List, Optional
-import io
-from fastapi.responses import StreamingResponse
-from jinja2 import Template
 
 # create DB tables
 Base.metadata.create_all(bind=engine)
