@@ -35,9 +35,11 @@ ENV PATH=/root/.local/bin:$PATH \
 
 # Copy application code
 COPY app/ ./app/
-COPY .env.example ./.env
 
-# Expose port (default 8000 for FastAPI)
+# ✅ REMOVE THIS — DO NOT COPY .env ON RENDER
+# COPY .env.example ./.env
+
+# Expose port
 EXPOSE 8000
 
 # Health check
