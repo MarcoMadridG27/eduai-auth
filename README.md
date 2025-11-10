@@ -3,9 +3,10 @@
 Microservicio en Python para registro con correo y login con Google (id_token verification).
 
 Requisitos
-- Python 3.10+
+- Python 3.10+ (para desarrollo local)
+- Docker y Docker Compose (para contenedores)
 
-Instalación
+Instalación (desarrollo local)
 1. Crear y activar un entorno virtual
 
 ```powershell
@@ -26,6 +27,26 @@ Uso (desarrollo)
 # Levantar server
 uvicorn app.main:app --reload --port 8000
 ```
+
+Uso con Docker
+Para correr el microservicio con PostgreSQL en contenedores (recomendado):
+
+```powershell
+# Construir e iniciar contenedores
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f auth-api
+
+# Detener
+docker-compose down
+```
+
+El servidor estará disponible en http://localhost:8000
+- API docs: http://localhost:8000/docs
+- Base de datos: PostgreSQL en localhost:5432 (usuario: postgres, contraseña: postgres)
+
+Para producción, actualiza las variables de entorno en `docker-compose.yml` y usa `docker build` / `docker push` a tu registry.
 
 Endpoints principales
 - POST /register  -> {"email","password","full_name"}
