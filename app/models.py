@@ -13,6 +13,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     provider = Column(String, default="email")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    sessions = Column(JSON, nullable=True, default=list)
 
 
 class UserSession(Base):

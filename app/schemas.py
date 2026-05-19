@@ -40,7 +40,7 @@ class SessionCreate(BaseModel):
 
 
 class SessionOut(BaseModel):
-    id: int
+    id: str
     user_id: str
     session_data: Dict[str, Any]
     created_at: datetime
