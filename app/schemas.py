@@ -22,7 +22,7 @@ class GoogleLogin(BaseModel):
 class UserOut(BaseModel):
     id: int
     email: EmailStr
-    full_name: Optional[str]
+    full_name: Optional[str] = None
     provider: str
 
     class Config:
