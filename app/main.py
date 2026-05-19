@@ -44,15 +44,26 @@ def add_sessions_column_if_missing():
                 logger.info("Successfully added 'sessions' JSON column to SQLite 'users' table.")
             except Exception as e:
                 logger.info(f"SQLite check finished (column may already exist): {e}")
-    except Exception as e:
-        logger.error(f"Error checking/adding sessions column: {e}")
+    except Exception:
+        logger.exception("Error checking/adding sessions column")
     finally:
         db.close()
 
 # Enable CORS for frontend requests
+cors_origins_env = os.getenv("CORS_ORIGINS")
+if cors_origins_env:
+    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "https://eduai-auth-1.onrender.com",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to specific origins in production: ["https://tu-dominio.com"]
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
