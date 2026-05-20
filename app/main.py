@@ -157,7 +157,7 @@ def save_session(payload: schemas.SessionCreate, db: Annotated[Session, Depends(
         "created_at": new_session_data.get("created_at", now_str)
     }
     
-    # Update or append in the sessions JSON list
+    # Update or append in the sessions JSON list (on the User table)
     updated_sessions = []
     found = False
     for s in user.sessions:
@@ -175,6 +175,26 @@ def save_session(payload: schemas.SessionCreate, db: Annotated[Session, Depends(
     user.sessions = updated_sessions
     flag_modified(user, "sessions")
     
+    # --- Save / Update in the dedicated 'sessions' table (UserSession model) ---
+    existing_sessions = db.query(models.UserSession).filter(models.UserSession.user_id == payload.user_id).all()
+    db_session = None
+    for s in existing_sessions:
+        s_data = s.session_data or {}
+        s_id = str(s_data.get("session_id") or s_data.get("id") or "")
+        if s_id == session_id:
+            db_session = s
+            break
+
+    if db_session:
+        db_session.session_data = new_session_data
+        flag_modified(db_session, "session_data")
+    else:
+        db_session = models.UserSession(
+            user_id=payload.user_id,
+            session_data=new_session_data
+        )
+        db.add(db_session)
+        
     db.commit()
     db.refresh(user)
     
@@ -189,6 +209,34 @@ def save_session(payload: schemas.SessionCreate, db: Annotated[Session, Depends(
 
 def _find_session_by_id(db: Session, session_id: str):
     """Finds the user and the session dictionary by session_id in the db."""
+    # First try to find in the dedicated UserSession table
+    db_sessions = db.query(models.UserSession).all()
+    for s in db_sessions:
+        s_data = s.session_data or {}
+        s_id = str(s_data.get("session_id") or s_data.get("id") or "")
+        if s_id == session_id:
+            user = auth.get_user_by_email(db, s.user_id)
+            if user:
+                # Keep user's local sessions array in sync or fallback to it
+                user_session_item = None
+                if user.sessions:
+                    for us in user.sessions:
+                        if isinstance(us, dict) and (str(us.get("id")) == session_id or str(us.get("session_data", {}).get("session_id")) == session_id):
+                            user_session_item = us
+                            break
+                if not user_session_item:
+                    user_session_item = {
+                        "id": session_id,
+                        "user_id": s.user_id,
+                        "session_data": s_data,
+                        "created_at": s.created_at.isoformat() if hasattr(s.created_at, "isoformat") else str(s.created_at)
+                    }
+                    if user.sessions is None:
+                        user.sessions = []
+                    user.sessions.append(user_session_item)
+                return user, user_session_item
+
+    # Fallback to scanning all users for legacy session data
     users = db.query(models.User).all()
     for u in users:
         if u.sessions:
@@ -219,18 +267,47 @@ def _format_session_dict(s: dict, user_email: str) -> dict:
     }
 
 
-def _get_single_user_sessions(user) -> list:
-    """Formats sessions for a single user."""
+def _get_single_user_sessions(db: Session, user_email: str) -> list:
+    """Formats sessions for a single user using UserSession table, falling back to user.sessions JSON."""
+    db_sessions = db.query(models.UserSession).filter(models.UserSession.user_id == user_email).all()
+    if db_sessions:
+        return [
+            {
+                "id": str(s.session_data.get("session_id") or s.session_data.get("id") or str(s.id)),
+                "user_id": s.user_id,
+                "session_data": s.session_data,
+                "created_at": s.created_at
+            }
+            for s in db_sessions
+        ]
+    
+    # Fallback to User JSON column
+    user = db.query(models.User).filter(models.User.email == user_email).first()
+    if not user or not user.sessions:
+        return []
+    
     all_sessions = []
-    if user.sessions:
-        for s in user.sessions:
-            if isinstance(s, dict):
-                all_sessions.append(_format_session_dict(s, user.email))
+    for s in user.sessions:
+        if isinstance(s, dict):
+            all_sessions.append(_format_session_dict(s, user.email))
     return all_sessions
 
 
 def _get_all_users_sessions(db: Session) -> list:
-    """Formats all sessions for all users, sorted by created_at descending."""
+    """Formats all sessions for all users using UserSession table, falling back to users.sessions JSON."""
+    db_sessions = db.query(models.UserSession).order_by(models.UserSession.created_at.desc()).all()
+    if db_sessions:
+        return [
+            {
+                "id": str(s.session_data.get("session_id") or s.session_data.get("id") or str(s.id)),
+                "user_id": s.user_id,
+                "session_data": s.session_data,
+                "created_at": s.created_at
+            }
+            for s in db_sessions
+        ]
+        
+    # Fallback to scanning all users
     all_sessions = []
     users = db.query(models.User).all()
     for u in users:
@@ -246,10 +323,7 @@ def _get_all_users_sessions(db: Session) -> list:
 def get_sessions(db: Annotated[Session, Depends(get_db)], user_id: Optional[str] = None):
     """List sessions. If user_id is provided, filter by that user_id."""
     if user_id:
-        user = auth.get_user_by_email(db, user_id)
-        if not user:
-            return []
-        return _get_single_user_sessions(user)
+        return _get_single_user_sessions(db, user_id)
     else:
         return _get_all_users_sessions(db)
 
@@ -288,6 +362,16 @@ def add_comment(session_id: str, payload: dict, db: Annotated[Session, Depends(g
     from sqlalchemy.orm.attributes import flag_modified
     flag_modified(user_found, "sessions")
     
+    # --- Also update the sessions table (UserSession) ---
+    existing_sessions = db.query(models.UserSession).filter(models.UserSession.user_id == user_found.email).all()
+    for s in existing_sessions:
+        s_data = s.session_data or {}
+        s_id = str(s_data.get("session_id") or s_data.get("id") or "")
+        if s_id == session_id:
+            s.session_data = session_data
+            flag_modified(s, "session_data")
+            break
+            
     db.commit()
     return {"status": "ok", "comment": new_comment}
 
@@ -308,6 +392,16 @@ def like_session(session_id: str, db: Annotated[Session, Depends(get_db)]):
     from sqlalchemy.orm.attributes import flag_modified
     flag_modified(user_found, "sessions")
     
+    # --- Also update the sessions table (UserSession) ---
+    existing_sessions = db.query(models.UserSession).filter(models.UserSession.user_id == user_found.email).all()
+    for s in existing_sessions:
+        s_data = s.session_data or {}
+        s_id = str(s_data.get("session_id") or s_data.get("id") or "")
+        if s_id == session_id:
+            s.session_data = session_data
+            flag_modified(s, "session_data")
+            break
+            
     db.commit()
     return {"status": "ok", "likes": likes}
 
